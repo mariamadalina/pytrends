@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
-
+import urllib
 
 
 from pandas.io.json._normalize import nested_to_record
@@ -62,6 +62,7 @@ class TrendReq(object):
         self.interest_by_region_widget = dict()
         self.related_topics_widget_list = list()
         self.related_queries_widget_list = list()
+
 
     def GetGoogleCookie(self):
         """
@@ -146,7 +147,7 @@ class TrendReq(object):
                 response=response)
 
     def build_payload(self, kw_list, cat=0, timeframe='today 5-y', geo='',
-                      gprop=''):
+                      gprop='',url=''):
         """Create the payload for related queries, interest over time and interest by region"""
         self.kw_list = kw_list
         self.geo = geo or self.geo
@@ -161,13 +162,26 @@ class TrendReq(object):
             keyword_payload = {'keyword': kw, 'time': timeframe,
                                'geo': self.geo}
             self.token_payload['req']['comparisonItem'].append(keyword_payload)
+
+        if len(self.kw_list)==0 and len(url)==0:
+            keyword_payload = {'time': timeframe,
+                               'geo': self.geo}
+            self.token_payload['req']['comparisonItem'].append(keyword_payload)
+        if url and len(self.kw_list)==0:
+            keyword_payload = {'time': timeframe,
+                               'geo': self.geo,
+                               'keyword':url}
+            self.token_payload['req']['comparisonItem'].append(keyword_payload)
+            
         # requests will mangle this if it is not a string
         self.token_payload['req'] = json.dumps(self.token_payload['req'])
+
+        
         # get tokens
         self._tokens()
         return
 
-    def _tokens(self):
+    def _tokens(self,**kwargs):
         """Makes request to Google to get API tokens for interest over time, interest by region and related queries"""
         # make the request and parse the returned json
         widget_dict = self._get_data(
@@ -307,8 +321,10 @@ class TrendReq(object):
         result_dict = dict()
         for request_json in self.related_topics_widget_list:
             # ensure we know which keyword we are looking at rather than relying on order
-            kw = request_json['request']['restriction'][
-                'complexKeywordsRestriction']['keyword'][0]['value']
+            if 'complexKeywordsRestriction' in request_json['request']['restriction']:
+                kw = request_json['request']['restriction']['complexKeywordsRestriction']['keyword'][0]['value']
+            else:
+                kw = ''
             # convert to string as requests will mangle
             related_payload['req'] = json.dumps(request_json['request'])
             related_payload['token'] = request_json['token']
@@ -342,7 +358,10 @@ class TrendReq(object):
                 # in case no rising topics are found, the lines above will throw a KeyError
                 df_rising = None
 
-            result_dict[kw] = {'rising': df_rising, 'top': df_top}
+            if (kw):
+                result_dict[kw] = {'top': df_top, 'rising': df_rising}
+            else:
+                result_dict = {'top': df_top, 'rising': df_rising}
         return result_dict
 
     def related_queries(self):
@@ -356,8 +375,10 @@ class TrendReq(object):
         result_dict = dict()
         for request_json in self.related_queries_widget_list:
             # ensure we know which keyword we are looking at rather than relying on order
-            kw = request_json['request']['restriction'][
-                'complexKeywordsRestriction']['keyword'][0]['value']
+            if 'complexKeywordsRestriction' in request_json['request']['restriction']:
+                kw = request_json['request']['restriction']['complexKeywordsRestriction']['keyword'][0]['value']
+            else:
+                kw = ''
             # convert to string as requests will mangle
             related_payload['req'] = json.dumps(request_json['request'])
             related_payload['token'] = request_json['token']
@@ -388,8 +409,10 @@ class TrendReq(object):
             except KeyError:
                 # in case no rising queries are found, the lines above will throw a KeyError
                 rising_df = None
-
-            result_dict[kw] = {'top': top_df, 'rising': rising_df}
+            if (kw):
+                result_dict[kw] = {'top': top_df, 'rising': rising_df}
+            else:
+                result_dict = {'top': top_df, 'rising': rising_df}
         return result_dict
 
     def trending_searches(self, pn='united_states'):
